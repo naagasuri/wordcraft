@@ -1,6 +1,8 @@
 // Offline support for the iPad / home-screen web app.
 // index.html: network first (so updates arrive), cached copy when offline.
 // Hashed .wasm/.js and icons: cache first (their names change on every build).
+// The build stamps a new cache name into this file each time, so the browser sees a new service
+// worker after every deploy, installs it, and `activate` drops the previous build's files.
 const CACHE = "wordcraft-v1";
 
 self.addEventListener("install", (e) => {

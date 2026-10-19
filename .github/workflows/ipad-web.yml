@@ -1,0 +1,78 @@
+# Build the browser version (with iPad home-screen support) and publish it on GitHub Pages.
+# One-time setup in your fork: Settings › Pages › Build and deployment › Source: "GitHub Actions".
+# Then: Actions › "iPad web app" › Run workflow. The site appears at
+# https://<your-github-name>.github.io/<repo-name>/  — open it in Safari on the iPad and use
+# Share › Add to Home Screen.
+name: iPad web app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo*'
+      - 'apps/wordcraft-web/**'
+      - 'crates/**'
+      - '.github/workflows/ipad-web.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ipad-web
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: '0'
+      TRUNK_VERSION: v0.21.14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ipad-web
+
+      - name: Install trunk
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" trunk
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/trunk" --version
+
+      - name: Build (release, WebAssembly)
+        working-directory: apps/wordcraft-web
+        run: trunk build --release
+
+      - name: Check the iPad files are in the site
+        run: |
+          ls -lh dist/web
+          test -f dist/web/sw.js
+          test -f dist/web/pwa/manifest.webmanifest
+          test -f dist/web/pwa/icon-180.png
+          touch dist/web/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -31,9 +31,28 @@ GitHub account.
   (or it goes to *Downloads* in the Files app).
 - **Keyboard:** a hardware keyboard (Magic Keyboard / Smart Keyboard) is strongly recommended;
   Word's shortcuts work, with ⌘ on Apple keyboards.
-- **Updates:** every new run of the workflow updates the app; close and reopen it to pick it up.
-  To pull in upstream fixes, on your fork's page click **Sync fork**, then run the workflow again.
+- **Full screen:** opened from the home-screen icon, WordCraft fills the whole screen with no
+  Safari bars, like an installed app (the clock and battery stay visible at the top). In a normal
+  Safari tab a small hint offers this once.
+- **Updates (automatic):** every 6 hours the fork merges new commits from storytold/wordcraft and,
+  if there were any, rebuilds the app. The iPad picks up the new version the next time you open
+  WordCraft (fully close it and reopen if you want it straight away). Actions › **iPad web app** ›
+  **Run workflow** syncs and rebuilds immediately.
 - Your documents stay on the iPad; nothing is uploaded to a server.
+
+## If an automatic update fails
+
+The run shows a red ✗ on the **Actions** tab, and GitHub emails you. Usually it is one of these:
+
+- **"workflow" in the message:** the original project changed its own GitHub workflow files, which
+  GitHub's built-in token isn't allowed to merge. Press **Sync fork › Update branch** on the
+  repository page once, or, to make it automatic for good, create a token: GitHub › your photo ›
+  **Settings › Developer settings › Personal access tokens › Fine-grained tokens › Generate new
+  token**, repository access *Only select repositories › wordcraft*, permissions **Contents: Read
+  and write** and **Workflows: Read and write**. Then in the fork: **Settings › Secrets and
+  variables › Actions › New repository secret**, name `SYNC_TOKEN`, paste the token.
+- **"conflict":** an edit you made clashes with an upstream change; press **Sync fork** and choose
+  how to resolve it.
 
 ## A native App Store–style app?
 

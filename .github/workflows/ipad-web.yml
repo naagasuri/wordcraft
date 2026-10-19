@@ -1,11 +1,20 @@
-# Build the browser version (with iPad home-screen support) and publish it on GitHub Pages.
-# One-time setup in your fork: Settings › Pages › Build and deployment › Source: "GitHub Actions".
-# Then: Actions › "iPad web app" › Run workflow. The site appears at
-# https://<your-github-name>.github.io/<repo-name>/  — open it in Safari on the iPad and use
-# Share › Add to Home Screen.
+# Keep this fork up to date with storytold/wordcraft, then build the browser version (with iPad
+# home-screen support) and publish it on GitHub Pages.
+#
+# - Every 6 hours: merge the original repository's new commits into this fork's main branch (like
+#   the "Sync fork" button); if anything came in, rebuild and redeploy. The iPad app picks up the
+#   new version the next time it is opened.
+# - Actions › "iPad web app" › Run workflow: sync and rebuild now.
+# - A push to main (your own edits) rebuilds.
+#
+# One-time setup: Settings › Pages › Source: "GitHub Actions".
+# Optional: when the original repository changes its own GitHub workflow files, GitHub's built-in
+# token may not merge them. Add a token as the secret SYNC_TOKEN (see IPAD.md) to cover that case.
 name: iPad web app
 
 on:
+  schedule:
+    - cron: '23 */6 * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -16,16 +25,53 @@ on:
       - '.github/workflows/ipad-web.yml'
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
   group: ipad-web
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  sync:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${{ steps.merge.outputs.changed }}
+    steps:
+      - name: Merge new commits from the original repository
+        id: merge
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          USING_PAT: ${{ secrets.SYNC_TOKEN != '' }}
+        run: |
+          set +e
+          out=$(gh api -X POST "repos/${GITHUB_REPOSITORY}/merge-upstream" -f branch=main 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          if [ $code -ne 0 ]; then
+            echo "::error::Could not sync with the original repository. If the message mentions 'workflow', add a SYNC_TOKEN secret (see IPAD.md) or press 'Sync fork' on the repository page. If it mentions a conflict, your own edits clash with an upstream change."
+            exit 1
+          fi
+          type=$(echo "$out" | jq -r '.merge_type // "none"')
+          echo "merge type: $type"
+          # With SYNC_TOKEN the merge itself starts a push-triggered build, so don't build twice.
+          if [ "$type" != "none" ] && [ "$USING_PAT" != "true" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: sync
+    # Push: always. Manual run: always (after syncing). Schedule: only when something new came in.
+    if: >-
+      always() &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && needs.sync.result == 'success') ||
+       needs.sync.outputs.changed == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -34,6 +80,8 @@ jobs:
       TRUNK_VERSION: v0.21.14
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -55,10 +103,16 @@ jobs:
         working-directory: apps/wordcraft-web
         run: trunk build --release
 
+      - name: Stamp this build into the service worker (so installed apps update)
+        run: |
+          stamp="wordcraft-$(git rev-parse --short HEAD)-${GITHUB_RUN_NUMBER}"
+          sed -i "s/const CACHE = \"wordcraft-v1\";/const CACHE = \"${stamp}\";/" dist/web/sw.js
+          grep -q "${stamp}" dist/web/sw.js
+          echo "cache: ${stamp}"
+
       - name: Check the iPad files are in the site
         run: |
           ls -lh dist/web
-          test -f dist/web/sw.js
           test -f dist/web/pwa/manifest.webmanifest
           test -f dist/web/pwa/icon-180.png
           touch dist/web/.nojekyll
@@ -69,6 +123,7 @@ jobs:
 
   deploy:
     needs: build
+    if: always() && needs.build.result == 'success'
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
